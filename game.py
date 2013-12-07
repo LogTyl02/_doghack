@@ -13,6 +13,8 @@ ROOM_MAX_SIZE = 10
 ROOM_MIN_SIZE = 6
 MAX_ROOMS = 30
  
+# Monster constants
+MAX_ROOM_MONSTERS = 2
  
 FOV_ALGO = 0  #default FOV algorithm
 FOV_LIGHT_WALLS = True  #light walls or not
@@ -60,7 +62,9 @@ class Rect:
 class Object:
     #this is a generic object: the player, a monster, an item, the stairs...
     #it's always represented by a character on screen.
-    def __init__(self, x, y, char, color):
+    def __init__(self, x, y, char, color, name, blocks = False):
+    	self.name = name
+    	self.blocks = blocks
         self.x = x
         self.y = y
         self.char = char
@@ -68,7 +72,7 @@ class Object:
  
     def move(self, dx, dy):
         #move by the given amount, if the destination is not blocked
-        if not map[self.x + dx][self.y + dy].blocked:
+        if not is_blocked(self.x + dx, self.y +dy):
             self.x += dx
             self.y += dy
  
@@ -82,9 +86,26 @@ class Object:
     def clear(self):
         #erase the character that represents this object
         libtcod.console_put_char(con, self.x, self.y, ' ', libtcod.BKGND_NONE)
- 
- 
- 
+
+def place_objects(room):
+	# Choose random number of monsters
+	num_monsters = libtcod.random_get_int(0, 0, MAX_ROOM_MONSTERS)
+
+	for i in range(num_monsters):
+		# Choose random spot for this monsters
+		x = libtcod.random_get_int(0, room.x1, room.x2)
+		y = libtcod.random_get_int(0, room.y1, room.y2)
+
+		if not is_blocked(x, y):
+			if libtcod.random_get_int(0, 0, 100) < 80: 		# 80 % chance of getting an orc
+				# create an orc
+				monster = Object(x, y, 'o', libtcod.desaturated_green, 'Orc', True)
+			else:
+				# create a troll (christ, that seems excessive)
+				monster = Object(x, y, 'T', libtcod.red, 'Troll', True)
+
+			objects.append(monster)
+
 def create_room(room):
     global map
     #go through the tiles in the rectangle and make them passable
@@ -141,6 +162,9 @@ def make_map():
  
             #"paint" it to the map's tiles
             create_room(new_room)
+
+            # Add some life to the party
+            place_objects(new_room) # Only monsters right now
  
             #center coordinates of new room, will be useful later
             (new_x, new_y) = new_room.center()
@@ -196,9 +220,9 @@ def render_all():
                 else:
                     #it's visible
                     if wall:
-                        libtcod.console_set_char_background(con, x, y, color_light_wall, libtcod.BKGND_SET )
+                        libtcod.console_put_char_ex(con, x, y, '#', libtcod.white, color_light_wall)
                     else:
-                        libtcod.console_set_char_background(con, x, y, color_light_ground, libtcod.BKGND_SET )
+                        libtcod.console_put_char_ex(con, x, y, '.', libtcod.gray, color_light_ground)
                     #since it's visible, explore it
                     map[x][y].explored = True
  
@@ -209,6 +233,18 @@ def render_all():
     #blit the contents of "con" to the root console
     libtcod.console_blit(con, 0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, 0, 0, 0)
  
+def is_blocked(x, y):
+	# First test the map tile
+	if map[x][y].blocked:
+		return True
+	# Now check for any blocking objects
+	for object in objects:
+		if object.blocks and object.x == x and object.y == y:
+			return True
+
+	return False
+
+
 def handle_keys():
     global fov_recompute
 
@@ -263,10 +299,10 @@ libtcod.sys_set_fps(LIMIT_FPS)
 con = libtcod.console_new(SCREEN_WIDTH, SCREEN_HEIGHT)
  
 #create object representing the player
-player = Object(SCREEN_WIDTH/2, SCREEN_HEIGHT/2, '@', libtcod.white)
+player = Object(SCREEN_WIDTH/2, SCREEN_HEIGHT/2, '@', libtcod.white, 'Player')
  
 #create an NPC
-npc = Object(SCREEN_WIDTH/2 - 5, SCREEN_HEIGHT/2, '@', libtcod.yellow)
+npc = Object(SCREEN_WIDTH/2 - 5, SCREEN_HEIGHT/2, '@', libtcod.yellow, 'NPC', True)
  
 #the list of objects with those two
 objects = [npc, player]
