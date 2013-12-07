@@ -4,8 +4,11 @@ SCREEN_WIDTH = 80
 SCREEN_HEIGHT = 50
 LIMIT_FPS = 20
 
-playerx = SCREEN_WIDTH/2
-playery = SCREEN_HEIGHT/2
+
+
+#
+# Classes
+#
 
 class Actor(object):
 	''' This is anything that can be drawn to the screen: 
@@ -17,8 +20,9 @@ class Actor(object):
 		self.color = color
 
 	def move(self, dx, dy):
-		self.x += dx
-		self.y += dy
+		if not map[self.x + dx][self.y + dy].blocked:  # This makes blocked map pieces impassible.
+			self.x += dx
+			self.y += dy
 
 	def draw(self):
 		libtcod.console_set_default_foreground(con, self.color)
@@ -27,6 +31,42 @@ class Actor(object):
 	def clear(self):
 		libtcod.console_put_char(con, self.x, self.y, ' ', libtcod.BKGND_NONE)
 
+
+##			  ##
+#	The Map	   #	
+##			  ##
+
+MAP_WIDTH = 80
+MAP_HEIGHT = 45
+
+color_dark_wall = libtcod.Color(165, 180, 175)	# Kind of a grayish green, clay color
+color_dark_ground = libtcod.Color(120, 100, 65) # Dark Brown, dirty 
+
+class Tile(object):
+	''' Map tiles, and their properties '''
+	def __init__(self, blocked, block_sight = None):
+		self.blocked = blocked
+
+		# By default, if a tile is blocked, it also blocks sight
+		if block_sight is None: block_sight = blocked
+		self.block_sight = block_sight
+
+def make_map():
+	global map
+	# Fill map with 'unblocked' tiles
+	map = [[ Tile(False) 
+		for y in range(MAP_HEIGHT) ] 
+			for x in range(MAP_WIDTH) ]	# List comprehensions to make two-dimensional arrays!
+
+	map[30][22].blocked = True
+	map[30][22].block_sight = True
+	map[50][22].blocked = True
+	map[50][22].block_sight = True
+
+#####
+
+
+# Needs to be moved into a class
 def handle_keys():
 	global playerx, playery
 
@@ -60,7 +100,21 @@ def handle_keys():
 	elif libtcod.console_is_key_pressed(libtcod.KEY_KP3):
 		player.move(1, 1)
 
+def render_all():
 
+	for actor in actors:
+		actor.draw()
+
+	for y in range(MAP_HEIGHT):
+		for x in range(MAP_WIDTH):
+			wall = map[x][y].block_sight
+			if wall:
+				#libtcod.console_set_char_background(con, x, y, color_dark_wall, libtcod.BKGND_SET)
+				libtcod.console_put_char_ex(con, x, y, '#', color_dark_wall, libtcod.gray)
+			else:
+				libtcod.console_set_char_background(con, x, y, color_dark_ground, libtcod.BKGND_SET)
+
+	libtcod.console_blit(con, 0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, 0, 0, 0)
 
 
 
@@ -86,6 +140,10 @@ demon = Actor(SCREEN_WIDTH/2 - 10, SCREEN_HEIGHT/2 - 5, '&', libtcod.magenta)
 
 actors = [npc, demon, player]
 
+
+
+make_map()
+
 #
 # Main Loop
 #
@@ -93,10 +151,7 @@ actors = [npc, demon, player]
 while not libtcod.console_is_window_closed():
 	libtcod.console_set_default_foreground(con, libtcod.white)
 
-	for actor in actors:
-		actor.draw()
-
-	libtcod.console_blit(con, 0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, 0, 0, 0)		# Blitting the non-root console's content to the root console for actual display.
+	render_all()
 	libtcod.console_flush()
 
 	for actor in actors:
