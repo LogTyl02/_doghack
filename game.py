@@ -1,5 +1,6 @@
 import libtcodpy as libtcod
 import math
+import textwrap
  
 #actual size of the window
 SCREEN_WIDTH = 80
@@ -7,7 +8,7 @@ SCREEN_HEIGHT = 50
  
 #size of the map
 MAP_WIDTH = 80
-MAP_HEIGHT = 45
+MAP_HEIGHT = 43
  
 #parameters for dungeon generator
 ROOM_MAX_SIZE = 10
@@ -16,19 +17,42 @@ MAX_ROOMS = 30
  
 # Monster constants
 MAX_ROOM_MONSTERS = 2
+
+# Items
+MAX_ROOM_ITEMS = 2
+
+INVENTORY_WIDTH = 50
  
 FOV_ALGO = 0  #default FOV algorithm
 FOV_LIGHT_WALLS = True  #light walls or not
 TORCH_RADIUS = 10
  
+# Sizes and values relevant for the GUI
+BAR_WIDTH = 21
+PANEL_HEIGHT = 8
+PANEL_Y = SCREEN_HEIGHT - PANEL_HEIGHT
+
+MSG_X = BAR_WIDTH + 2
+MSG_WIDTH = SCREEN_WIDTH - BAR_WIDTH - 2
+MSG_HEIGHT = PANEL_HEIGHT - 1
+
 LIMIT_FPS = 20  #20 frames-per-second maximum
  
  
-color_dark_wall = libtcod.Color(0, 0, 100)
-color_light_wall = libtcod.Color(130, 110, 50)
-color_dark_ground = libtcod.Color(50, 50, 150)
-color_light_ground = libtcod.Color(200, 180, 50)
- 
+color_dark_wall = libtcod.darkest_sepia
+color_light_wall = libtcod.sepia
+color_dark_ground = libtcod.darkest_gray
+color_light_ground = libtcod.darker_gray
+
+class Item:
+	def pick_up(self):
+		if len(inventory) >= 26:
+			message('Your inventory is full. Maybe you should pawn some of your stuff.', libtcod.cyan)
+		else:
+			inventory.append(self.owner)
+			objects.remove(self.owner)
+			message('You picked up a ' + str(self.owner.name) + '.', libtcod.light_green)
+
 class Fighter:
 	# Combat-related properties and methods
 	def __init__(self, hp, defense, power, death_function=None):
@@ -51,10 +75,10 @@ class Fighter:
 		damage = self.power - target.fighter.defense
 
 		if damage > 0:
-			print self.owner.name.capitalize(), 'attacks', target.name, 'for', str(damage), 'hit points!'
+			message('The ' + str(self.owner.name.capitalize()) + ' attacks ' + str(target.name) + ' for ' + str(damage) + ' hit points! ', libtcod.white)
 			target.fighter.take_damage(damage)
 		else:
-			print self.owner.name.capitalize(), 'attacks', target.name, 'but it has no effect!'
+			message('The ' + str(self.owner.name.capitalize()) + ' attacks ' + str(target.name) + ' but it has no effect! ', libtcod.white)
 
 class BasicMonster:
 	# Ai for a basic monster
@@ -101,7 +125,11 @@ class Rect:
 class Object:
     #this is a generic object: the player, a monster, an item, the stairs...
     #it's always represented by a character on screen.
-    def __init__(self, x, y, char, color, name, blocks = False, fighter = None, ai = None):
+    def __init__(self, x, y, char, color, name, blocks = False, fighter = None, ai = None, item=None):
+    	self.item = item
+    	if self.item:
+    		self.item.owner = self
+
     	self.fighter = fighter
     	if self.fighter: # Let the fighter component knows who owns it
     		self.fighter.owner = self
@@ -164,15 +192,15 @@ def place_objects(room):
 
 	for i in range(num_monsters):
 		# Choose random spot for this monsters
-		x = libtcod.random_get_int(0, room.x1, room.x2)
-		y = libtcod.random_get_int(0, room.y1, room.y2)
+		x = libtcod.random_get_int(0, room.x1+1, room.x2-1)
+		y = libtcod.random_get_int(0, room.y1+1, room.y2-1)
 
 		if not is_blocked(x, y):
 			if libtcod.random_get_int(0, 0, 100) < 80: 		# 80 % chance of getting an orc
 				# create an orc
 				fighter_component = Fighter(hp=10, defense=0, power=3, death_function = monster_death)
 				ai_compenent = BasicMonster()
-				monster = Object(x, y, 'o', libtcod.desaturated_green, 'Orc', blocks=True, fighter=fighter_component, ai=ai_compenent)
+				monster = Object(x, y, 'o', libtcod.red, 'Orc', blocks=True, fighter=fighter_component, ai=ai_compenent)
 			else:
 				# create a troll (christ, that seems excessive)
 				fighter_component = Fighter(hp=16, defense=1, power=4, death_function = monster_death)
@@ -180,6 +208,23 @@ def place_objects(room):
 				monster = Object(x, y, 'T', libtcod.red, 'Troll', blocks=True, fighter=fighter_component, ai=ai_compenent)
 
 			objects.append(monster)
+
+	# Time for items
+	num_items = libtcod.random_get_int(0, 0, MAX_ROOM_ITEMS)
+
+	for i in range(num_items):
+		#Choose a random spot for this item
+		x = libtcod.random_get_int(0, room.x1+1, room.x2-1)
+		y = libtcod.random_get_int(0, room.y1+1, room.y2-1)
+
+		# only place it if the tile isn't blocked
+		if not is_blocked(x, y):
+			#create a healing potion
+			item_component = Item()
+			item = Object(x, y, '!', name='healing potion', color=libtcod.white, item=item_component)
+
+			objects.append(item)
+			item.send_to_back()
 
 def create_room(room):
     global map
@@ -289,15 +334,15 @@ def render_all():
                     #if it's not visible right now, the player can only see it if it's explored
                     if map[x][y].explored:
                         if wall:
-                            libtcod.console_set_char_background(con, x, y, color_dark_wall, libtcod.BKGND_SET)
+                            libtcod.console_put_char_ex(con, x, y, 177, libtcod.darkest_gray, color_light_wall)
                         else:
-                            libtcod.console_set_char_background(con, x, y, color_dark_ground, libtcod.BKGND_SET)
+                            libtcod.console_put_char_ex(con, x, y, '.', libtcod.darker_gray, color_light_ground)
                 else:
                     #it's visible
                     if wall:
-                        libtcod.console_put_char_ex(con, x, y, '#', libtcod.white, color_light_wall)
+                        libtcod.console_put_char_ex(con, x, y, 176, libtcod.gray, color_light_wall)
                     else:
-                        libtcod.console_put_char_ex(con, x, y, '.', libtcod.gray, color_light_ground)
+                        libtcod.console_put_char_ex(con, x, y, '.', libtcod.lighter_gray, color_light_ground)
                     #since it's visible, explore it
                     map[x][y].explored = True
  
@@ -310,10 +355,28 @@ def render_all():
     #blit the contents of "con" to the root console
     libtcod.console_blit(con, 0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, 0, 0, 0)
 
+
+    # Prepare to render the GUI Panel
+    libtcod.console_set_default_background(panel, libtcod.black)
+    libtcod.console_clear(panel)
+
+    # print the game messages
+
+    y = 1
+    for (line, color) in game_msgs:
+    	libtcod.console_set_default_foreground(panel, color)
+    	libtcod.console_print_ex(panel, MSG_X, y, libtcod.BKGND_NONE, libtcod.LEFT, line)
+    	y += 1
+
+
     # Show the player's stats
-    libtcod.console_set_default_foreground(con, libtcod.white)
-    libtcod.console_print_ex(0, 1, SCREEN_HEIGHT - 2, libtcod.BKGND_NONE, libtcod.LEFT,
-    	'HP: ' + str(player.fighter.hp) + '/' + str(player.fighter.max_hp) )
+    render_bar(1, 1, BAR_WIDTH, 'HP', player.fighter.hp, player.fighter.max_hp,
+    	libtcod.red, libtcod.darker_red)
+
+    # Blit the contents of the panel to the root console
+    libtcod.console_blit(panel, 0, 0, SCREEN_WIDTH, PANEL_HEIGHT, 0, 0, PANEL_Y)
+
+    
  
 def is_blocked(x, y):
 	# First test the map tile
@@ -384,12 +447,28 @@ def handle_keys():
 	        player_move_or_attack(1, 1)
 
 	    else:
-	    	return 'didnt-take-turn'
+	    	# Test for other keys
+	    	key_char = chr(key.c)
+	    	# Snagging items
+
+	    	if key_char == 'g' or key_char == ',':
+	    		#pick up item
+	    		for object in objects: #look for an item in the player's tile
+	    			if object.x == player.x and object.y == player.y and object.item:
+	    				object.item.pick_up()
+	    				break
+
+	    	# Inventory
+	    	if key_char == 'i':
+	    		#show the inventory
+	    		inventory_menu('You do know how to use your inventory, right?\n')
+
+		    	return 'didnt-take-turn'
  
 def player_death(player):
  	# The game ends
 	global game_state
- 	print 'YOU DIED!'
+ 	message('YOU DIED!', libtcod.dark_red)
  	game_state = 'dead'
 
  	# Transform the player into a corpse!
@@ -398,7 +477,7 @@ def player_death(player):
 
 def monster_death(monster):
  	# Transform it into a corpse! It doesn't block or do anything
- 	print monster.name.capitalize(), 'crumples to the floor in a bloody heap!'
+ 	message('The ' + str(monster.name.capitalize()) + ' crumples to the floor in a bloody heap!', libtcod.yellow)
  	monster.char = '%'
  	monster.color = libtcod.dark_red
  	monster.blocks = False
@@ -407,6 +486,83 @@ def monster_death(monster):
  	monster.name = 'remains of', monster.name
  	monster.send_to_back()
 
+
+
+
+def menu(header, options, width):
+	if len(options) > 26: raise ValueError('Cannot have a menu with more than 26 options.')
+
+	#calculate the total height for the header after auto-wrap, and one line per option
+	header_height = libtcod.console_get_height_rect(con, 0, 0, width, SCREEN_HEIGHT, header)
+	height = len(options) + header_height
+
+	#print an off-screen console that represents the menu's window
+	window = libtcod.console_new(width, height)
+
+	#print the header, with auto-wrap
+	libtcod.console_set_default_foreground(window, libtcod.white)
+	libtcod.console_print_rect_ex(window, 0, 0, width, height, libtcod.BKGND_NONE, libtcod.LEFT, header)
+
+	#print all the options
+
+	y = header_height
+	letter_index = ord('a')
+	for option_text in options:
+		text = '(' + chr(letter_index) + ') ' + option_text
+		libtcod.console_print_ex(window, 0, y, libtcod.BKGND_NONE, libtcod.LEFT, text)
+		y += 1
+		letter_index += 1
+
+	# Blit the contents of 'window' to the root console
+	x = SCREEN_WIDTH / 2 - width / 2
+	y = SCREEN_HEIGHT / 2 - height / 2
+	libtcod.console_blit(window, 0, 0, width, height, 0, x, y, 1.0, 0.7)
+
+	#present the root console to the player and wait for a key-press
+	libtcod.console_flush()
+	key = libtcod.console_wait_for_keypress(True)  #Bugged, try the waitForEvent API
+
+def inventory_menu(header):
+	if len(inventory) == 0:
+		options = ['Inventory is empty.']
+	else:
+		options = [item.name for item in inventory]
+
+	index = menu(header, options, INVENTORY_WIDTH)
+
+
+
+def render_bar(x, y, total_width, name, value, maximum, bar_color, back_color):
+	# Render a bar (HP, experience, etc). First calculate the width of the bar
+	bar_width = int(float(value) / maximum * total_width)
+
+	# Render the background first
+	libtcod.console_set_default_background(panel, back_color)
+	libtcod.console_rect(panel, x, y, total_width, 1, False, libtcod.BKGND_SCREEN)
+
+	# Now render the bar on top
+	libtcod.console_set_default_background(panel, bar_color)
+	if bar_width > 0:
+		libtcod.console_rect(panel, x, y, bar_width, 1, False, libtcod.BKGND_SCREEN)
+
+	# Finally, some centered text with the values
+	libtcod.console_set_default_foreground(panel, libtcod.white)
+	libtcod.console_print_ex(panel, x + total_width / 2, y, libtcod.BKGND_NONE, libtcod.CENTER,
+		name + ': ' + str(value) + '/' + str(maximum))
+
+def message(new_msg, color = libtcod.white):
+	# Split the message if necessary, among multiple lines
+	new_msg_lines = textwrap.wrap(new_msg, MSG_WIDTH)
+
+	for line in new_msg_lines:
+		#if the buffer is full, remove the first line to make room for the new one
+		if len(game_msgs) == MSG_HEIGHT:
+			del game_msgs[0]
+
+		# add the new line as a tuple, with the text and color
+		game_msgs.append( (line, color) )
+
+
 #############################################
 # Initialization & Main Loop
 #############################################
@@ -414,6 +570,8 @@ def monster_death(monster):
 libtcod.console_set_custom_font('terminal16x16_gs_ro.png', libtcod.FONT_TYPE_GREYSCALE | libtcod.FONT_LAYOUT_ASCII_INROW, nb_char_horiz=16, nb_char_vertic=16)
 libtcod.console_init_root(SCREEN_WIDTH, SCREEN_HEIGHT, 'doghack alpha', False)
 libtcod.sys_set_fps(LIMIT_FPS)
+
+panel = libtcod.console_new(MAP_WIDTH, MAP_HEIGHT)
 con = libtcod.console_new(SCREEN_WIDTH, SCREEN_HEIGHT)
  
 #create object representing the player
@@ -425,7 +583,14 @@ player = Object(SCREEN_WIDTH/2, SCREEN_HEIGHT/2, '@', libtcod.white, 'Player', f
  
 #the list of objects with those two
 objects = [player]
- 
+
+# Inventory
+
+inventory = []
+
+# Game message
+game_msgs = []
+
 #generate map (at this point it's not drawn to the screen)
 make_map()
  
@@ -439,6 +604,9 @@ for y in range(MAP_HEIGHT):
 fov_recompute = True
 game_state = 'playing'
 player_action = None
+
+# A warm, welcoming message!
+message('Welcome stranger! Prepare to perish in the Tombs of the Ancient Dog Kings', libtcod.red)
  
 while not libtcod.console_is_window_closed():
  
